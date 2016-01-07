@@ -23,38 +23,42 @@ define(['formats/pack', 'formats/pack_index', 'objectstore/objects', 'utils/misc
 				objectsDir.getDirectory('pack', {create:true}, function(packDir){
 					var packEntries = [];
 					var reader = packDir.createReader();
-					var readEntries = function(){
-						reader.readEntries(function(entries){
-						    if (entries.length){
-								for (var i = 0; i < entries.length; i++){
+					var readEntries = function (secondRun) {
+						reader.readEntries(function (entries) {
+							if (entries.length && !secondRun) {
+								for (var i = 0; i < entries.length; i++) {
 									if (entries[i].name.endsWith('.pack'))
 										packEntries.push(entries[i]);
 								}
-								readEntries();
-							}
-							else{
-								if (packEntries.length){
-									var counter = {x : 0};
-									packEntries.forEach(function(entry, i){
-										fileutils.readFile(packDir, entry.name, "ArrayBuffer", function(packData){
+								readEntries(true);
+							} else {
+								if (packEntries.length) {
+									var counter = {x: 0};
+									packEntries.forEach(function (entry, i) {
+										fileutils.readFile(packDir, entry.name, "ArrayBuffer", function (packData) {
 											var nameRoot = entry.name.substring(0, entry.name.lastIndexOf('.pack'));
-											fileutils.readFile(packDir, nameRoot + '.idx', 'ArrayBuffer', function(idxData){
-												thiz.packs.push({pack: new Pack(packData, thiz), idx: new PackIndex(idxData)});
+											fileutils.readFile(packDir, nameRoot + '.idx', 'ArrayBuffer', function (idxData) {
+												thiz.packs.push({
+													pack: new Pack(packData, thiz),
+													idx: new PackIndex(idxData)
+												});
 												counter.x += 1;
-												if (counter.x == packEntries.length){
+												if (counter.x == packEntries.length) {
 													callback();
 												}
-											}, fe);
+											}, function(err) {
+												console.error(err, " : ", entry);
+											});
 										}, fe);
 									});
 								}
-								else{
+								else {
 									callback();
 								}
 							}
 						}, fe);
 					}
-					readEntries();
+					readEntries(false);
 				}, fe);
 			}, fe);
 		},
@@ -195,7 +199,7 @@ define(['formats/pack', 'formats/pack_index', 'objectstore/objects', 'utils/misc
 					},
 					function(e){
 						// No commits yet
-						if (e.code == FileError.NOT_FOUND_ERR){
+						if (e.code == FileError.NOT_FOUND_ERR || e.name === 'NotFoundError'){//TODO: Refactoring!
 							error({type: errutils.COMMIT_NO_CHANGES, msg: errutils.COMMIT_NO_CHANGES_MSG});
 						}
 						else{
@@ -238,7 +242,7 @@ define(['formats/pack', 'formats/pack_index', 'objectstore/objects', 'utils/misc
 				}, fe);
 			}, 
 			function(e){
-				if (e.code == FileError.NOT_FOUND_ERR){
+				if (e.code == FileError.NOT_FOUND_ERR || e.name === 'NotFoundError'){//TODO: Refactoring
 					callback([]);
 				}
 				else{
@@ -355,7 +359,7 @@ define(['formats/pack', 'formats/pack_index', 'objectstore/objects', 'utils/misc
 				self.load(success);
 			},
 			function(e){
-				if (e.code == FileError.NOT_FOUND_ERR){
+				if (e.code == FileError.NOT_FOUND_ERR || e.name === 'NotFoundError'){//TODO: Refactoring
 					self._init(success);
 				}
 				else{
@@ -432,7 +436,7 @@ define(['formats/pack', 'formats/pack_index', 'objectstore/objects', 'utils/misc
 						 if(!file.size){
 						 	var content = utils.deflate(store);
 						 	fileEntry.createWriter(function(fileWriter){
-						 		fileWriter.write(new Blob([content]));;
+								fileWriter.write(content);
 						 		callback(digest);
 						 	}, utils.errorHandler);
 						 }
@@ -464,7 +468,7 @@ define(['formats/pack', 'formats/pack_index', 'objectstore/objects', 'utils/misc
 			fileutils.readFile(this.dir, '.git/config.json', 'Text', function(configStr){
 				success(JSON.parse(configStr));
 			}, function(e){
-				if (e.code == FileError.NOT_FOUND_ERR){
+				if (e.code == FileError.NOT_FOUND_ERR || e.name === 'NotFoundError'){//TODO: Refactoring
 					success({});
 				}
 				else{

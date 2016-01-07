@@ -46,7 +46,7 @@ define(['utils/misc_utils'], function(utils){
 					if (contents instanceof ArrayBuffer){
 						contents = new Uint8Array(contents);
 					}
-					writer.write(new Blob([contents]));
+					writer.write(contents);
 				}, error);
 			}, error);
 		}
@@ -110,27 +110,46 @@ define(['utils/misc_utils'], function(utils){
 							callback(entries);
 						} else {
 							entries = entries.concat(toArray(results));
-							readEntries();
+							callback(entries);
 						}
 					}, error);
 				}
 				readEntries();
 				
 			},
-			readBlob: function(blob, dataType, callback){
-				var reader = new FileReader();
-				reader.onloadend = function(e){
-					callback(reader.result);
+			readBlob: function(blobOrFile, dataType, callback){
+				var text2ua = function (s) {//TODO: Refactoring! Put method somewhere else
+					s = s.replace('\ufeff', '');
+					var ua = new Uint8Array(s.length);
+					for (var i = 0; i < s.length; i++) {
+						ua[i] = s.charCodeAt(i);
+					}
+					return ua;
+				};
+				if (blobOrFile instanceof Blob) {
+					var reader = new FileReader();
+					reader.onloadend = function (e) {
+						callback(reader.result);
+					}
+					reader["readAs" + dataType](blobOrFile);
+				} else if (typeof blobOrFile == 'string') {
+					callback(text2ua(blobOrFile).buffer);
+				} else {
+					throw new Error("Unknown type: ", typeof blobOrFile);
 				}
-				reader["readAs" + dataType](blob);
 			},
 			readFileEntry : function(fileEntry, dataType, callback){
-				fileEntry.file(function(file){
-					FileUtils.readBlob(file, dataType, callback);
-				});
+				if (dataType === 'Text') {
+					fileEntry.readAsText(function (data, lastModTime) {
+						callback(data);
+					});
+				} else if (dataType === 'ArrayBuffer') {
+					fileEntry.readAsText(function (data, lastModTime) {
+						FileUtils.readBlob(data, dataType, callback);
+					});
+				}
 			},
 			readFile : function(root, file, dataType, callback, error) {
-				
 				root.getFile(file, {create:false}, function(fileEntry){
 					FileUtils.readFileEntry(fileEntry, dataType, callback, error);
 				}, error);

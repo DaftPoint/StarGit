@@ -152,6 +152,7 @@ define(['commands/clone', 'commands/commit', 'commands/init', 'commands/pull', '
                         objectStore: objectStore, 
                         dir: options.dir, 
                         url: options.url,
+                        remove: options.remove,
                         username: options.username,
                         password: options.password,
                         progress: options.progress
@@ -265,6 +266,45 @@ define(['commands/clone', 'commands/commit', 'commands/init', 'commands/pull', '
                     }
                 });
                 success(remoteBranches);
+            });
+        },
+        getProjectRefs: function (options, success, error) {
+            success = success || function () {
+                };
+            error = error || function () {
+                };
+            var objectStore = new FileObjectStore(options.dir);
+            objectStore.init(function () {
+                var remoteProjectURL = options.url;
+                var username = options.username;
+                var password = options.password;
+
+                var remote = new SmartHttpRemote(objectStore, "refs/heads", remoteProjectURL, username, password);
+                remote.fetchProjectRefs(function () {
+                    var remoteRefs = remote.getProjectRefs();
+                    success(remoteRefs);
+                    return remoteRefs;
+                })
+            });
+        },
+        getProjectLockRefs: function (options, success, error) {
+            success = success || function () {
+                };
+            error = error || function () {
+                };
+            var objectStore = new FileObjectStore(options.dir);
+            objectStore.init(function () {
+                var remoteProjectURL = options.url;
+                var username = options.username;
+                var password = options.password;
+                var projectName = options.projectName;
+
+                var remote = new SmartHttpRemote(objectStore, "refs/heads", remoteProjectURL, username, password);
+                remote.fetchLockRefs(projectName, function () {
+                    var remoteRefs = remote.getProjectLockRefs();
+                    success(remoteRefs);
+                    return remoteRefs;
+                })
             });
         }
 

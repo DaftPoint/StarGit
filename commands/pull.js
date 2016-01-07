@@ -121,10 +121,20 @@ define(['commands/treemerger', 'commands/object2file', 'commands/conditions', 'f
                                             packNameSha = Crypto.SHA1(sortedShas);
                                             
                                             var packName = 'pack-' + packNameSha;
-                                            mkdirs(store.dir, '.git/objects', function(objectsDir){
+                                            mkdirs(store.dir, '.git/objects', function(objectsDir){//TODO: REFACTORING!!!
                                                 store.objectsDir = objectsDir;
                                                 mkfile(objectsDir, 'pack/' + packName + '.pack', packData.buffer);
-                                                mkfile(objectsDir, 'pack/' + packName + '.idx', packIdxData);
+                                                packIdxDataStr = new Uint8Array(packIdxData);
+                                                var ua2text =function(ua) {
+                                                    var s = '';
+                                                    for (var i = 0; i < ua.length; i++) {
+                                                        s += String.fromCharCode(ua[i]);
+                                                    }
+                                                    return s;
+                                                };
+                                                packIdxDataStr = ua2text(packIdxDataStr);
+                                                packIdxDataStr = '\ufeff' + packIdxDataStr;
+                                                mkfile(objectsDir, 'pack/' + packName + '.idx', packIdxDataStr);
                                                 
                                                 var packIdx = new PackIndex(packIdxData);
                                                 if (!store.packs){
@@ -145,18 +155,8 @@ define(['commands/treemerger', 'commands/object2file', 'commands/conditions', 'f
                                             });
                                         }
                                         else{
-                                            // non-fast-forward merge
                                             nonFastForward();
-                                            // var shas = [wantRef.localHead, common[i], wantRef.sha]
-                                            // store._getTreesFromCommits(shas, function(trees){
-                                            //     treeMerger.mergeTrees(store, trees[0], trees[1], trees[2], function(finalTree){
-                                            //         mkfile(store.dir, '.git/' + wantRef.name, sha, done); 
-                                            //     }, function(e){errors.push(e);done();});
-                                            // });
-                                            
                                         }
-                                            
-                                        
                                     }, nonFastForward, fetchProgress);
                                 });
                                                              

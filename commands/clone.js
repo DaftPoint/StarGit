@@ -127,15 +127,30 @@ define(['commands/object2file', 'formats/smart_http_remote', 'formats/pack_index
                                 packNameSha = Crypto.SHA1(sortedShas);
                                 
                                 var packName = 'pack-' + packNameSha;
-                                mkdirs(gitDir, 'objects', function(objectsDir){
-                                    mkfile(objectsDir, 'pack/' + packName + '.pack', packData.buffer);
-                                    mkfile(objectsDir, 'pack/' + packName + '.idx', packIdxData);
-                                    
-                                    var packIdx = new PackIndex(packIdxData);
-                                    store.loadWith(objectsDir, [{pack: new Pack(packData, self), idx: packIdx}]);
-                                    progress({pct: 95, msg: "Building file tree from pack. Be patient..."});
-                                    _createCurrentTreeFromPack(dir, store, localHeadRef.sha, function(){
-                                        createInitialConfig(shallow, localHeadRef, callback);
+                                mkdirs(gitDir, 'objects', function (objectsDir) {//TODO: REFACTORING!!! Put method somewhere else
+                                    var promise = $.Deferred();
+                                    mkdirs(objectsDir, 'pack', function(packDir) {
+                                        mkfile(packDir, packName + '.pack', packData.buffer);
+                                        packIdxDataStr = new Uint8Array(packIdxData);
+                                        var ua2text =function(ua) {
+                                            var s = '';
+                                            for (var i = 0; i < ua.length; i++) {
+                                                s += String.fromCharCode(ua[i]);
+                                            }
+                                            return s;
+                                        };
+                                        packIdxDataStr = ua2text(packIdxDataStr);
+                                        packIdxDataStr = '\ufeff' + packIdxDataStr;
+                                        mkfile(packDir, packName + '.idx', packIdxDataStr);
+                                        promise.resolve();
+                                    });
+                                    promise.done(function() {
+                                        var packIdx = new PackIndex(packIdxData);
+                                        store.loadWith(objectsDir, [{pack: new Pack(packData, self), idx: packIdx}]);
+                                        progress({pct: 95, msg: "Building file tree from pack. Be patient..."});
+                                        _createCurrentTreeFromPack(dir, store, localHeadRef.sha, function () {
+                                            createInitialConfig(shallow, localHeadRef, callback);
+                                        });
                                     });
                                 }, ferror); 
                             }, null, packProgress);

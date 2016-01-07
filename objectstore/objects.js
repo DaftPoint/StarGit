@@ -1,4 +1,4 @@
-define(['utils/misc_utils', 'thirdparty/underscore-min'], function(utils) {
+define(['utils/misc_utils'/*, 'thirdparty/underscore-min'*/], function(utils) {
     var map = {
         "commit": 1,
         "tree": 2,

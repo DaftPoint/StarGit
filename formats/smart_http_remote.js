@@ -6,6 +6,8 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
         this.store = store;
         this.name = name;
         this.refs = {};
+        this.projects = {};
+        this.locks = {};
         this.url = repoUrl.replace(/\?.*/, "").replace(/\/$/, "");
         username = username || "";
         password = password || "";
@@ -48,8 +50,6 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
         }
 
         var pushRequest = function(refPaths, packData) {
-            
-
             var pktLine = function(refPath) {
                 return refPath.sha + ' ' + refPath.head + ' ' + refPath.name;
             }
@@ -65,6 +65,27 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
             }
             bb.push('0000');
             bb.push(new Uint8Array(packData));
+            var blob = new Blob(bb);
+            return blob;
+
+        }
+
+        var removeRequest = function (refPaths) {
+            var pktLine = function (refPath) {
+                refPath.head = refPath.head || '0000000000000000000000000000000000000000';
+                return  refPath.sha + ' ' + refPath.head + ' ' + refPath.name;
+            }
+            var bb = []; //new BlobBuilder();
+            var str = pktLine(refPaths[0]) + '\0report-status\n';
+            str = padWithZeros(str.length + 4) + str;
+            bb.push(str);
+            for (var i = 1; i < refPaths.length; i++) {
+                if (!refPaths[i].head) continue;
+                var val = pktLine(refPaths[i]) + '\n';
+                val = padWithZeros(val.length + 4)
+                bb.push(val);
+            }
+            bb.push('0000');
             var blob = new Blob(bb);
             return blob;
 
@@ -158,6 +179,67 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
             });
         }
 
+        this.fetchProjectRefs = function (callback) {
+            var remote = this,
+                uri = this.makeUri('/info/refs', {service: "git-upload-pack"});
+            doGet(uri, function (data) {
+                var discInfo = parseDiscovery(data)
+                var i, ref
+                for (i = 0; i < discInfo.refs.length; i++) {
+                    ref = discInfo.refs[i]
+                    remote.addProjectRef(ref.name, ref.sha)
+                }
+                if (callback != "undefined") {
+                    callback(discInfo.refs)
+                }
+            });
+        }
+
+        this.fetchLockRefs = function (projectName, callback) {
+            var remote = this,
+                uri = this.makeUri('/info/refs', {service: "git-upload-pack"});
+            doGet(uri, function (data) {
+                var discInfo = parseDiscovery(data)
+                var i, ref
+                for (i = 0; i < discInfo.refs.length; i++) {
+                    ref = discInfo.refs[i]
+                    remote.addLockRef(projectName, ref.name, ref.sha)
+                }
+                if (callback != "undefined") {
+                    callback(discInfo.refs)
+                }
+            });
+        }
+
+        this.addProjectRef = function (fullName, sha) {
+            var type, name
+            if (fullName.slice(0, 20) == "refs/heads/projects/") {
+                type = fullName.split("/")[1];
+                name = fullName.split("/")[3];
+                this.projects[name] = {
+                    name: name,
+                    sha: sha,
+                    remote: this,
+                    type: type
+                }
+            }
+        }
+
+        this.addLockRef = function (projectName, fullName, sha) {
+            var type, name
+            var sliceLength = ("refs/heads/locks/" + projectName + "/").length;
+            if (fullName.slice(0, sliceLength) == "refs/heads/locks/" + projectName + "/") {
+                type = fullName.split("/")[1];
+                name = fullName.split("/")[4];
+                this.locks[name] = {
+                    name: name,
+                    sha: sha,
+                    remote: this,
+                    type: type
+                }
+            }
+        }
+
         this.fetchReceiveRefs = function(callback) {
             var remote = this,
                 uri = this.makeUri('/info/refs', {service: "git-receive-pack"});
@@ -212,36 +294,11 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
                             callback(objects, packData, common, shallow);
                         }
                     }, packProgress);
-                    // var packWorker = new Worker(workerUrl);
-                    // packWorker.onmessage = function(evt){
-                    //     var msg = evt.data;
-                    //     if (msg.type == GitLiteWorkerMessages.FINISHED && callback){
-                    //         packWorker.terminate();
-                    //         callback(msg.objects, new Uint8Array(msg.data), msg.common);
-                    //     }
-                    //     else if (msg.type == GitLiteWorkerMessages.RETRIEVE_OBJECT){
-                    //         store._retrieveRawObject(msg.sha, "ArrayBuffer", function(baseObject){
-                    //             packWorker.postMessage({type: GitLiteWorkerMessages.OBJECT_RETRIEVED, id: msg.id, object: baseObject}, [baseObject.data]);
-                    //             var x = 0;
-                    //         });
-                    //     }
-                    //     else if (progress && msg.type == GitLiteWorkerMessages.PROGRESS){
-                    //         progress(msg);
-                    //     }
-                    // }
-                    // packWorker.postMessage({type: GitLiteWorkerMessages.START, data:binaryData}, [binaryData]);
                 }
             }
             if (receiveProgress){
                 xhr.onprogress = function(evt){
-                    // if (evt.lengthComputable){
-                    //     var pct = evt.loaded / evt.total;
-                    //     receiveProgress({pct: pct, msg: "Received " + evt.loaded + "/" + evt.total + " bytes"});
-                    // }
-                    // else{
-
-                        receiveProgress({pct: 100, msg: "Received " + (evt.loaded/1048576).toFixed(2) + " MB"});
-                    // }
+                    receiveProgress({pct: 100, msg: "Received " + (evt.loaded/1048576).toFixed(2) + " MB"});
                 }
             }
             var xhr2ErrorShim = function(){
@@ -253,38 +310,7 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
             xhr.onabort = xhr2ErrorShim;
 
             xhr.send(body);
-
-            //  $.ajax({
-            //    url: url,
-            //    data: body,
-            //    type: "POST",
-            //    contentType: "application/x-git-upload-pack-request",
-            //    beforeSend: function(xhr) {
-            //      xhr.overrideMimeType('text/plain; charset=x-user-defined')
-            //    },
-            //    success: function(data, textStatus, xhr) {
-            //      var binaryData = xhr.responseText
-            //      if (haveRefs && binaryData.indexOf("NAK") == 4){
-            //      	if (moreHaves){
-            // 	thisRemote.repo._getCommitGraph(moreHaves, 32, function(commits, next){
-            // 		thisRemote.fetchRef(wantRefs, commits, next, callback);
-            // 	});
-            // }
-            //      }
-            //      else{
-            // var parser = new Git.UploadPackParser(binaryData, repo)
-            // parser.parse(function(objects, packData, common){
-            // 	if (callback != "undefined") {
-            // 	  callback(objects, packData, common);
-            // 	}
-            // });
-            // }        
-            //    },
-            //    error: function(xhr, data, e) {
-            //      Git.displayError("ERROR Status: " + xhr.status + ", response: " + xhr.responseText)
-            //    }
-            //  });
-        },
+        };
 
         this.pushRefs = function(refPaths, packData, success, progress) {
             var url = this.makeUri('/git-receive-pack');
@@ -307,30 +333,47 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
                         ajaxErrorHandler.call(obj, xhr); 
                     }
                 }
-            }
+            };
             xhr.setRequestHeader('Content-Type', 'application/x-git-receive-pack-request');
             var bodySize = (body.size/1024).toFixed(2);
             xhr.upload.onprogress = function(evt){
                 progress({pct: evt.loaded/body.size * 100, msg: 'Sending ' + (evt.loaded/1024).toFixed(2) + '/' + bodySize + " KB"});
+            };
+            xhr.send(body);
+        };
+
+        this.removeRefs = function (refPaths, success, progress) {
+            var url = this.makeUri('/git-receive-pack');
+            var body = removeRequest(refPaths);
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", url, true, username, password);
+            xhr.onload = function (evt) {
+                if (xhr.readyState == 4) {
+                    if (xhr.status == 200) {
+                        var msg = xhr.response;
+                        if (msg.indexOf('000eunpack ok') == 0) {
+                            success();
+                        }
+                        else {
+                            error({type: errutils.UNPACK_ERROR, msg: errutils.UNPACK_ERROR_MSG});
+                        }
+                    }
+                    else {
+                        var obj = {url: url, type: 'POST'};
+                        ajaxErrorHandler.call(obj, xhr);
+                    }
+                }
+            }
+            xhr.setRequestHeader('Content-Type', 'application/x-git-receive-pack-request');
+            var bodySize = (body.size / 1024).toFixed(2);
+            xhr.upload.onprogress = function (evt) {
+                progress({
+                    pct: evt.loaded / body.size * 100,
+                    msg: 'Sending ' + (evt.loaded / 1024).toFixed(2) + '/' + bodySize + " KB"
+                });
             }
             xhr.send(body);
-            /*Gito.FileUtils.readBlob(body, 'BinaryString', function(strData){
-    		$.ajax({
-    			url : url,
-    			data : strData,
-    			type : 'POST',
-    			contentType : 'application/x-git-receive-pack-request',
-    			processData : false,
-    			//mimeType :'text/plain; charset=x-user-defined',
-  		  	success : function(data, textstatus, xhr){
-  		  		var x = 0;
-  		  	},
-  		  	error : function (xhr, data, e){
-  		  		Git.displayError("ERROR Status: " + xhr.status + ", response: " + xhr.responseText)
-  		  	}
-    		});
-    	});*/
-        }
+        };
 
         this.makeUri = function(path, extraOptions) {
             var uri = this.url + path
@@ -372,6 +415,14 @@ define(['formats/upload_pack_parser', 'utils/errors', 'utils/progress_chunker'],
 
         this.getRef = function(name) {
             return this.refs[this.name + "/" + name]
+        }
+
+        this.getProjectRefs = function () {
+            return _(this.projects).values()
+        }
+
+        this.getProjectLockRefs = function () {
+            return _(this.locks).values()
         }
     }
     return SmartHttpRemote;

@@ -30,18 +30,19 @@ define(['utils/file_utils', 'utils/errors'], function(fileutils, errutils){
             error({type: errutils.BRANCH_ALREADY_EXISTS, msg: errutils.BRANCH_ALREADY_EXISTS_MSG});
         }
 
-        store._getHeadForRef('refs/heads/' + branchName, branchAlreadyExists, function(e){
-            if (e.code == FileError.NOT_FOUND_ERR){
-                store.getHeadRef(function(refName){
-                    store._getHeadForRef(refName, function(sha){
-                        store.createNewRef('refs/heads/' + branchName, sha, success);
-                    }, ferror);
-                });
-            }
-            else{
+        store._getHeadForRef('refs/heads/' + branchName, branchAlreadyExists, function (e) {
+            if (e.code == FileError.NOT_FOUND_ERR || e.name === 'NotFoundError') {//TODO: REFACTORING!!!!
+                fileutils.mkfile(options.dir, '.git/refs/heads/' + branchName, '0000000000000000000000000000000000000000', function () {
+                    store.getHeadRef(function (refName) {
+                        store._getHeadForRef(refName, function (sha) {
+                            store.createNewRef('refs/heads/' + branchName, sha, success);
+                        }, ferror);
+                    });
+                }, ferror);//TODO: CHECK AND REFACTOR!!!
+            } else {
                 ferror(e);
             }
         });
-    }
+    };
     return branch;
 });
